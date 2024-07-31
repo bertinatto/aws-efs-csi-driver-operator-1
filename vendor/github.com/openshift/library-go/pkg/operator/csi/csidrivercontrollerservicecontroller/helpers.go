@@ -35,6 +35,7 @@ const (
 	snapshotterImageEnvName   = "SNAPSHOTTER_IMAGE"
 	livenessProbeImageEnvName = "LIVENESS_PROBE_IMAGE"
 	kubeRBACProxyImageEnvName = "KUBE_RBAC_PROXY_IMAGE"
+	toolsImageEnvName         = "TOOLS_IMAGE"
 
 	infraConfigName = "cluster"
 )
@@ -98,6 +99,25 @@ func WithCABundleDeploymentHook(
 			return fmt.Errorf("invalid dependency reference: %w", err)
 		}
 
+		return addObjectHash(deployment, inputHashes)
+	}
+}
+
+// WithConfigMapHashAnnotationHook creates a deployment hook that annotates a Deployment with a config map's hash.
+func WithConfigMapHashAnnotationHook(
+	namespace string,
+	configMapName string,
+	configMapInformer corev1.ConfigMapInformer,
+) dc.DeploymentHookFunc {
+	return func(opSpec *opv1.OperatorSpec, deployment *appsv1.Deployment) error {
+		inputHashes, err := resourcehash.MultipleObjectHashStringMapForObjectReferenceFromLister(
+			configMapInformer.Lister(),
+			nil,
+			resourcehash.NewObjectRef().ForConfigMap().InNamespace(namespace).Named(configMapName),
+		)
+		if err != nil {
+			return fmt.Errorf("invalid dependency reference: %w", err)
+		}
 		return addObjectHash(deployment, inputHashes)
 	}
 }
@@ -187,6 +207,11 @@ func WithPlaceholdersHook(configInformer configinformers.SharedInformerFactory) 
 		kubeRBACProxy := os.Getenv(kubeRBACProxyImageEnvName)
 		if kubeRBACProxy != "" {
 			pairs = append(pairs, []string{"${KUBE_RBAC_PROXY_IMAGE}", kubeRBACProxy}...)
+		}
+
+		tools := os.Getenv(toolsImageEnvName)
+		if tools != "" {
+			pairs = append(pairs, []string{"${TOOLS_IMAGE}", tools}...)
 		}
 
 		// Cluster ID
