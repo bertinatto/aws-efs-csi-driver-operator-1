@@ -42,6 +42,24 @@ spec:
                   matchLabels:
                     app: aws-efs-csi-driver-controller
                 topologyKey: kubernetes.io/hostname
+      initContainers:
+        - name: init-aws-credentials-file
+          image: ${TOOLS_IMAGE}
+          command:
+          - sh
+          - -c
+          - |
+            cat <<EOF > /var/run/aws/auth/credentials
+            [default]
+            aws_access_key_id=$(cat /var/run/aws/keys/aws_access_key_id)
+            aws_secret_access_key=$(cat /var/run/aws/keys/aws_secret_access_key)
+            EOF
+          volumeMounts:
+            - name: aws-keys
+              mountPath: /var/run/aws/keys
+              readOnly: true
+            - name: aws-auth
+              mountPath: /var/run/aws/auth
       containers:
           # CSI driver container
         - name: csi-driver
@@ -56,18 +74,6 @@ spec:
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: aws-efs-cloud-credentials
-                  key: aws_access_key_id
-                  optional: true
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: aws-efs-cloud-credentials
-                  key: aws_secret_access_key
-                  optional: true
             - name: AWS_SDK_LOAD_CONFIG
               value: '1'
             - name: AWS_CONFIG_FILE
@@ -90,9 +96,11 @@ spec:
             privileged: true
           terminationMessagePolicy: FallbackToLogsOnError
           volumeMounts:
-            - name: aws-credentials
-              mountPath: /var/run/secrets/aws
+            - name: aws-keys
+              mountPath: /var/run/aws/keys
               readOnly: true
+            - name: aws-auth
+              mountPath: /var/run/aws/auth
             - name: bound-sa-token
               mountPath: /var/run/secrets/openshift/serviceaccount
               readOnly: true
@@ -181,9 +189,11 @@ spec:
               memory: 50Mi
               cpu: 10m
       volumes:
-        - name: aws-credentials
+        - name: aws-keys
           secret:
             secretName: aws-efs-cloud-credentials
+        - name: aws-auth
+          emptyDir: {}
         # This service account token can be used to provide identity outside the cluster.
         # For example, this token can be used with AssumeRoleWithWebIdentity to authenticate with AWS using IAM OIDC provider and STS.
         - name: bound-sa-token
